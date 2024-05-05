@@ -17,7 +17,7 @@ class Fitter():
                            torch.optim.Adam([{'params' : self.face_model.parameters(), 'lr' : 1e-3}])]
     
     def run(self):
-        landmarks_gt, extrinsics0, intrinsics0, frames = self.dataset.get_item()
+        landmarks_gt, extrinsics0, intrinsics0, frames, vids = self.dataset.get_item()
         landmarks_gt = torch.from_numpy(landmarks_gt).float().to(self.device)
         extrinsics0 = torch.from_numpy(extrinsics0).float().to(self.device)
         intrinsics0 = torch.from_numpy(intrinsics0).float().to(self.device)
@@ -39,6 +39,7 @@ class Fitter():
                 pro_loss = (((landmarks_2d / self.cfg.image_size - landmarks_gt[:, :, :, 0:2] / self.cfg.image_size) * landmarks_gt[:, :, :, 2:3]) ** 2).sum(-1).sum(-2).mean()
                 reg_loss = self.face_model.reg_loss(self.cfg.reg_id_weight, self.cfg.reg_exp_weight)
                 loss = pro_loss + reg_loss
+                # print(i, loss)
 
                 optimizer.zero_grad()
                 loss.backward()
@@ -56,7 +57,8 @@ class Fitter():
             'landmarks_2d': landmarks_2d.detach(),
             'face_model': self.face_model,
             'intrinsics': intrinsics0,
-            'extrinsics': extrinsics0
+            'extrinsics': extrinsics0,
+            'vids': vids
         }
         self.recorder.log(log)
 

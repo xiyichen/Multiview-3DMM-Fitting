@@ -8,9 +8,11 @@ from lib.Recorder import Recorder
 from lib.Fitter import Fitter
 from lib.face_models import get_face_model
 from lib.Camera import Camera
+import os
 
 
 if __name__ == '__main__':
+    os.environ['PYOPENGL_PLATFORM'] = 'egl'
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', type=str, default='config/sample_video.yaml')
     arg = parser.parse_args()
@@ -24,7 +26,9 @@ if __name__ == '__main__':
 
     dataset = LandmarkDataset(landmark_folder=cfg.landmark_folder, camera_folder=cfg.camera_folder)
     face_model = get_face_model(cfg.face_model, batch_size=len(dataset), device=device)
-    camera = Camera(image_size=cfg.image_size)
+    # print(face_model.faces.shape)
+    # exit()
+    camera = Camera(image_size=256)
     recorder = Recorder(save_folder=cfg.param_folder, camera=camera, visualize=cfg.visualize, save_vertices=cfg.save_vertices)
 
     fitter = Fitter(cfg, dataset, face_model, camera, recorder, device)

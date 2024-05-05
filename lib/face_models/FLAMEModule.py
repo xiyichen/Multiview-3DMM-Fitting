@@ -222,8 +222,8 @@ class FLAME(nn.Module):
     """
     def __init__(self, batch_size):
 
-        self.shape_dims = 100
-        self.exp_dims = 50
+        self.shape_dims = 300
+        self.exp_dims = 100
 
         super(FLAME, self).__init__()
         print("creating the FLAME Decoder")
@@ -319,6 +319,10 @@ class FLAME(nn.Module):
             curr_idx = self.parents[curr_idx]
         self.register_buffer('neck_kin_chain',
                                 torch.stack(neck_kin_chain))
+        
+        self.register_buffer('l_eyelid', torch.from_numpy(np.load('./assets/FLAME/l_eyelid.npy')).float()[None])
+        self.register_buffer('r_eyelid', torch.from_numpy(np.load('./assets/FLAME/r_eyelid.npy')).float()[None])
+
 
     def _find_dynamic_lmk_idx_and_bcoords(self, vertices, pose, dynamic_lmk_faces_idx,
                                          dynamic_lmk_b_coords,
@@ -365,7 +369,7 @@ class FLAME(nn.Module):
 
         return dyn_lmk_faces_idx, dyn_lmk_b_coords
 
-    def forward(self, shape_params, expression_params, pose_params, neck_pose, eye_pose):
+    def forward(self, shape_params, expression_params, pose_params, neck_pose, eye_pose, eyelid_params=None):
         """
             Input:
                 shape_params: N X number of shape parameters
@@ -383,6 +387,9 @@ class FLAME(nn.Module):
         vertices, _ = lbs(betas, full_pose, template_vertices,
                                faces, self.shapedirs, self.posedirs,
                                self.J_regressor, self.parents, self.lbs_weights, )
+        if eyelid_params is not None:
+            vertices = vertices + self.r_eyelid.expand(self.batch_size, -1, -1) * eyelid_params[:, 1:2, None]
+            vertices = vertices + self.l_eyelid.expand(self.batch_size, -1, -1) * eyelid_params[:, 0:1, None]
 
         lmk_faces_idx = self.lmk_faces_idx.unsqueeze(dim=0).repeat(
             self.batch_size, 1)
@@ -412,8 +419,8 @@ class FLAMEModule(nn.Module):
     def __init__(self, batch_size):
         super(FLAMEModule, self).__init__()
 
-        self.shape_dims = 100
-        self.exp_dims = 50
+        self.shape_dims = 300
+        self.exp_dims = 100
         self.batch_size = batch_size
 
         self.flame = FLAME(batch_size)
@@ -425,21 +432,27 @@ class FLAMEModule(nn.Module):
 
         self.register_buffer('neck_pose', torch.zeros(self.batch_size, 3, dtype=torch.float32)) # not optimized
         self.register_buffer('global_rotation', torch.zeros(self.batch_size, 3, dtype=torch.float32)) # not optimized
+        self.eyelids = nn.Parameter(torch.zeros(self.batch_size, 2).float())
         self.register_buffer('faces', self.flame.faces_tensor)
 
-    def forward(self):
+    def forward(self, identity=None):
+        if identity is not None:
+            shape_params = torch.tensor(identity).float().to(self.id_coeff.device).reshape(self.batch_size, self.shape_dims)
+        else:
+            shape_params = self.id_coeff.repeat(self.batch_size, 1)
         expression_params = self.exp_coeff[:, : self.exp_dims]
         jaw_rotation = self.exp_coeff[:, self.exp_dims: self.exp_dims + 3]
         neck_pose = self.neck_pose
+        eyelids = self.eyelids
         eye_pose = self.exp_coeff[:, self.exp_dims + 3: self.exp_dims + 9]
 
         pose_params = torch.cat([self.global_rotation, jaw_rotation], 1)
-        shape_params = self.id_coeff.repeat(self.batch_size, 1)
         vertices, landmarks = self.flame(shape_params, 
                                          expression_params, 
                                          pose_params, 
                                          neck_pose, 
-                                         eye_pose)
+                                         eye_pose,
+                                         eyelids)
         R = so3_exponential_map(self.pose[:, :3])
         T = self.pose[:, 3:]
 
